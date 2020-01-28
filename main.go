@@ -2,35 +2,63 @@ package main
 
 import (
 	"fmt"
-	"github.com/fatih/color"
 	"html/template"
 	"io/ioutil"
 	"os"
-	"encoding/json"
 	"strings"
+
+	"github.com/fatih/color"
+	"github.com/gomarkdown/markdown"
 )
+
+type Page struct {
+	// Title    string
+	// Template string
+	Content template.HTML
+	Path    string
+	Title   string
+}
 
 func fatalOut(message string, params ...interface{}) {
 	red := color.New(color.FgRed)
-	_, _ = red.Printf(message, params...)
+	_, _ = red.Printf("Fatal: "+message, params...)
 	os.Exit(1)
 }
 
-type Page struct {
-
+func warnOut(message string, params ...interface{}) {
+	red := color.New(color.FgHiYellow)
+	_, _ = red.Printf("Warning: "+message, params...)
 }
 
 func loadPage(filename string) *Page {
-	body, err := ioutil.ReadFile(filename)
+	md, err := ioutil.ReadFile(filename)
 	if err != nil {
-		fatalOut("Error reading page file\n", err)
+		fatalOut("Error reading page file: %v\n", err)
 	}
-	var page Page
-	err = json.Unmarshal(body, page)
-	if err != nil {
-		fatalOut("Error unmarshalling page file\n", err)
-	}
+	path := strings.Replace(filename, ".md", ".html", 1)
+	content := markdown.ToHTML(md, nil, nil)
+	page := Page{template.HTML(string(content)), path, "My Title Here"}
 	return &page
+}
+
+func loadPages(dir string) []*Page {
+
+	var pages []*Page
+
+	c, err := ioutil.ReadDir(dir)
+	if err != nil {
+		fatalOut("Error reading directory %v.\n", dir)
+	}
+	for _, v := range c {
+		if v.IsDir() {
+			pages = append(pages, loadPages(dir+"/"+v.Name())...)
+		} else if v.Name() == "index.md" {
+			pages = append(pages, loadPage(dir+"/"+v.Name()))
+		} else {
+			warnOut("Unknown file %v.\n", dir)
+		}
+	}
+	return pages
 }
 
 func main() {
@@ -45,6 +73,8 @@ func main() {
 	if _, err := os.Stat(args[0]); os.IsNotExist(err) {
 		if args[0] == "init" {
 			fmt.Println("Initialising project")
+			// todo build out init feature
+			return
 		} else {
 			fatalOut("Unknown command %v\n", args[0])
 		}
@@ -52,7 +82,19 @@ func main() {
 
 	// if we get here the first param was a path
 	inDir := args[0]
+	// outDir := "www" // todo hardcoded for now
 
+	// load each page of the site
+	for _, page := range loadPages(inDir + "/pages") {
+		tmpl, err := template.ParseFiles(inDir + "/templates/index.html")
+		if err != nil {
+			fatalOut("Error parsing template '%v' - %v.\n", "templates/index.html", err)
+		}
+		// tmpl.Execute(outDir+"/"+page.Path, page)
+		tmpl.Execute(os.Stdout, page)
+	}
+
+	// load templates
 	c, err := ioutil.ReadDir(inDir + "/templates")
 	if err != nil {
 		fatalOut("A '%vtemplates/' directory must exist to contain site templates.\n", inDir)
@@ -63,7 +105,7 @@ func main() {
 
 	files := make([]string, len(c))
 	for i, v := range c {
-		if strings.LastIndex(v.Name(), ".html") == len(v.Name()) - 5 {
+		if strings.LastIndex(v.Name(), ".html") == len(v.Name())-5 {
 			files[i] = inDir + "templates/" + v.Name()
 		}
 	}
