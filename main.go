@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/ioutil"
@@ -36,8 +37,22 @@ func loadPage(filename string) *Page {
 		fatalOut("Error reading page file: %v\n", err)
 	}
 	path := strings.Replace(filename, ".md", ".html", 1)
+	var jsonStr string
+	for _, v := range strings.Split(string(md), "\n") {
+		if strings.Contains(v, "[//]: # (") {
+			v = strings.Trim(v, " ")
+			jsonStr = v[9 : len(v)-1]
+		}
+	}
 	content := markdown.ToHTML(md, nil, nil)
-	page := Page{template.HTML(string(content)), path, "My Title Here"}
+	page := Page{template.HTML(string(content)), path, ""}
+	if jsonStr != "" {
+		fmt.Println("UNMARSHAL: ", jsonStr)
+		err = json.Unmarshal([]byte(jsonStr), &page)
+		if err != nil {
+			fatalOut("There was a problem parsing the page config for %v\n%v\n%v\n", filename, jsonStr, err)
+		}
+	}
 	return &page
 }
 
